@@ -211,3 +211,9 @@ __marimo__/
 *.jpg
 *.jpeg
 *.pdf
+
+
+*/physionet.org/
+mimic-code/
+AI-Clinician/
+py_ai_clinician/
