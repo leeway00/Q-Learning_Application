@@ -219,3 +219,5 @@ AI-Clinician/
 py_ai_clinician/
 
 data/
+
+.vscode/
