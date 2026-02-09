@@ -221,3 +221,4 @@ py_ai_clinician/
 data/
 
 .vscode/
+preprocess/
