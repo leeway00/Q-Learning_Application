@@ -222,3 +222,4 @@ data/
 
 .vscode/
 preprocess/
+.archive/
