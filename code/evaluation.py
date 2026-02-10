@@ -12,6 +12,7 @@ import numpy as np
 
 from ai_utils import soften_policy
 from offpolicy import offpolicy_multiple_eval_010518
+from offpolicy_jit import offpolicy_multiple_eval_010518_jit
 
 
 def build_qldata3(
@@ -74,6 +75,7 @@ def evaluate_policy(
     iter_wis: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Run off-policy evaluation (TD-learning + WIS).
+    Run off-policy evaluation (TD-learning + WIS) using JIT/vectorized helpers.
+    Keeps the original call signature.
     """
-    return offpolicy_multiple_eval_010518(qldata3, physpol, gamma, 1, iter_ql, iter_wis)
+    return offpolicy_multiple_eval_010518_jit(qldata3, physpol, gamma, 1, iter_ql, iter_wis)

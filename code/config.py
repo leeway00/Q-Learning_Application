@@ -7,6 +7,7 @@ temp_dir = data_dir / 'temp'
 export_dir = data_dir / 'export_dir'
 python_dir = data_dir / "python_output"
 mdp_output_dir = data_dir / "mdp_output"
+mdp_log_dir = data_dir / "mdp_log"
 
 # MIMIC feature groups used in AIClinician_core.py
 COLBIN = ["gender", "mechvent", "max_dose_vaso", "re_admission"]

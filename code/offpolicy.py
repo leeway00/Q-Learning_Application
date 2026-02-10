@@ -38,7 +38,7 @@ def offpolicy_qlearning_150816(
     jj = 0
 
     for j in range(numtraces):
-        i = listi[int(np.floor(np.random.rand() * (nrepi - 2))) + 1]
+        i = listi[np.random.randint(0, nrepi - 2)]
         trace = []
         while qldata3[i + 1, 0] != 1:
             s1 = int(qldata3[i + 1, 1])
@@ -91,7 +91,7 @@ def offpolicy_eval_tdlearning(
         d[i] = np.sum(a == i)
 
     for _ in range(num_iter):
-        ii = np.floor(np.random.rand(p.size) + prop).astype(int)
+        ii = np.random.binomial(n=1, p=prop, size=p.shape[0])
         j = np.isin(qldata3[:, 7], p[ii == 1])
         q = qldata3[j, 0:4]
 
@@ -122,7 +122,7 @@ def offpolicy_eval_wis(
     last_c = 0
 
     for _ in range(num_iter):
-        ii = np.floor(np.random.rand(p.size) + prop).astype(int)
+        ii = np.random.binomial(n=1, p=prop, size=p.shape[0])
         j = np.isin(qldata3[:, 7], p[ii == 1])
         q = qldata3[j, :]
         fence_posts = np.where(q[:, 0] == 1)[0]

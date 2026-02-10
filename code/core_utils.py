@@ -147,6 +147,18 @@ def build_transition_matrices(
     transition_s_sprime_a[np.isnan(transition_s_sprime_a)] = 0
     transition_s_sprime_a[np.isinf(transition_s_sprime_a)] = 0
 
+    # Ensure stochasticity: if a (s,a) row was pruned to all zeros, make it self-loop.
+    row_sums = np.sum(transition_s_sprime_a, axis=1, keepdims=True)
+    zero_rows = row_sums == 0
+    if np.any(zero_rows):
+        # zero_rows shape: (S, 1, A) after keepdims, broadcast to (S, S, A)
+        s_indices = np.where(zero_rows[:, 0, :])
+        transition_s_sprime_a[s_indices[0], :, s_indices[1]] = 0
+        transition_s_sprime_a[s_indices[0], s_indices[0], s_indices[1]] = 1.0
+        # Keep the transpose version consistent.
+        transition_sprime_s_a[:, s_indices[0], s_indices[1]] = 0
+        transition_sprime_s_a[s_indices[0], s_indices[0], s_indices[1]] = 1.0
+
     # Behavior policy from observed (s,a) counts
     row_sums = np.sum(sums0a0, axis=1, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
