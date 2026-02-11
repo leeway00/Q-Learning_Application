@@ -73,6 +73,7 @@ def run_core(
     nr_reps: int = 500,
     seed: Optional[int] = None,
     do_plots: bool = False,
+    allpols_dir: Optional[Path] = None,
 ) -> Dict[str, object]:
     """Main entry to replicate AIClinician_core_160219.m"""
     rng = np.random.default_rng(seed)
@@ -92,7 +93,6 @@ def run_core(
 
     OA = np.full((N_STATES, nr_reps), np.nan)
     recqvi = np.full((nr_reps * 2, 30), np.nan)
-    allpols: Dict[int, Dict[str, object]] = {}
     polkeep = 1
 
     # Build MIMICraw and MIMICzs
@@ -121,11 +121,10 @@ def run_core(
     idxs = np.full((icustayidlist.shape[0], nr_reps), np.nan)
 
     for modl in tqdm(range(nr_reps), desc="Models", unit="model"):
-        # LOGGER.info("Model %d/%d", modl + 1, nr_reps)
+        
         if (modl + 1) % 10 == 0 or modl == 0:
             LOGGER.info("Progress: model %d/%d", modl + 1, nr_reps, extra={"loop_log": True})
         train, test = split_train_test(icustayidlist, icuuniqueids, NCV, rng)
-        # LOGGER.info("Split train/test: train_rows=%d test_rows=%d", np.sum(train), np.sum(test))
 
         x = mimiczs[train, :]
         xtestmimic = mimiczs[~train, :]
@@ -138,19 +137,16 @@ def run_core(
 
         # K-means on sampled rows
         centroids, idx = cluster_states(x, PROP, NCL, NCLUSTERING, 10000, rng)
-        # LOGGER.info("Clustering done: centroids=%s", centroids.shape)
 
         # Create actions
         iol = mimic_df.columns.get_loc("input_4hourly")
         vcl = mimic_df.columns.get_loc("max_dose_vaso")
         actionbloc, actionbloctrain = build_actions(reformat5, iol, vcl, train, include_eicu=False)
-        # LOGGER.info("Actions built: unique_actions=%d", np.unique(actionbloc).size)
 
         # Create QLDATA3 for transition estimation
         r = 100.0
         r2 = r * (2 * (1 - y90) - 1)
         qldata3 = build_qldata3_transition(blocs, idx, actionbloctrain, y90, r2, NCL)
-        # LOGGER.info("Transition qldata3 built: rows=%d", qldata3.shape[0])
 
         # Transition matrices and behavior policy
         transitionr, transitionr2, physpol = build_transition_matrices(
@@ -159,7 +155,6 @@ def run_core(
             NACT,
             TRANSTHRES,
         )
-        # LOGGER.info("Transition matrices built")
 
         # Reward matrix
         R = reward_from_transition(transitionr, DEATH_STATE, SURVIVE_STATE)
@@ -167,7 +162,6 @@ def run_core(
         # Policy iteration with Q (via pymdptoolbox policy iteration + Q reconstruction).
         Q, optimal_action = policy_iteration_with_q(transitionr2, R, GAMMA)
         OA[:, modl] = optimal_action
-        # LOGGER.info("Policy iteration complete")
 
         # Off-policy evaluation: MIMIC train
         r = 100.0
@@ -176,9 +170,7 @@ def run_core(
         qldata3 = build_qldata3(blocs, idx, actionbloctrain, y90, r2, ptid, abss)
         qldata3 = apply_policy_probabilities(qldata3, physpol, optimal_action, NACT, 0.01, NCL)
         qldata3train = qldata3.copy()
-        # LOGGER.info("Start evaluating policy on train data")
         bootql, bootwis = evaluate_policy(qldata3, physpol, GAMMA, 6, 750)
-        # LOGGER.info("Off-policy eval (train) complete")
 
         recqvi[modl, 0] = modl + 1
         recqvi[modl, 3] = np.nanmean(bootql)
@@ -195,9 +187,8 @@ def run_core(
         qldata3 = build_qldata3(bloctestmimic, idxtest, actionbloctest, y90test, r2, ptidtestmimic, abss)
         qldata3 = apply_policy_probabilities(qldata3, physpol, optimal_action, NACT, 0.01, NCL)
         qldata3test = qldata3.copy()
-        # LOGGER.info("Start evaluating policy on test data")
         bootmimictestql, bootmimictestwis = evaluate_policy(qldata3, physpol, GAMMA, 6, 2000)
-        # LOGGER.info("Off-policy eval (test) complete")
+        
         recqvi[modl, 18] = np.quantile(bootmimictestql, 0.95)
         recqvi[modl, 19] = np.nanmean(bootmimictestql)
         recqvi[modl, 20] = np.quantile(bootmimictestql, 0.99)
@@ -207,18 +198,21 @@ def run_core(
 
         # Store good models
         if recqvi[modl, 23] > 0:
-            allpols[polkeep] = {
-                "modl": modl + 1,
-                "Qon": Q,
-                "physpol": physpol,
-                "transitionr": transitionr,
-                "transitionr2": transitionr2,
-                "R": R,
-                "C": centroids,
-                "train": train,
-                "qldata3train": qldata3train,
-                "qldata3test": qldata3test,
-            }
+            if allpols_dir is not None:
+                allpols_dir.mkdir(parents=True, exist_ok=True)
+                np.savez_compressed(
+                    allpols_dir / f"model_{polkeep:04d}.npz",
+                    modl=modl + 1,
+                    Qon=Q,
+                    physpol=physpol,
+                    transitionr=transitionr,
+                    transitionr2=transitionr2,
+                    R=R,
+                    C=centroids,
+                    train=train,
+                    qldata3train=qldata3train,
+                    qldata3test=qldata3test,
+                )
             polkeep += 1
 
     recqvi = recqvi[:nr_reps, :]
@@ -228,7 +222,6 @@ def run_core(
         "recqvi": recqvi,
         "OA": OA,
         "idxs": idxs,
-        "allpols": allpols,
     }
 
 
@@ -248,25 +241,6 @@ def save_outputs(
         OA=outputs["OA"],
         idxs=outputs["idxs"],
     )
-
-    allpols = outputs.get("allpols", {})
-    if allpols:
-        pol_dir = run_dir / "allpols"
-        pol_dir.mkdir(parents=True, exist_ok=True)
-        for key, payload in allpols.items():
-            np.savez_compressed(
-                pol_dir / f"model_{key:04d}.npz",
-                modl=payload["modl"],
-                Qon=payload["Qon"],
-                physpol=payload["physpol"],
-                transitionr=payload["transitionr"],
-                transitionr2=payload["transitionr2"],
-                R=payload["R"],
-                C=payload["C"],
-                train=payload["train"],
-                qldata3train=payload["qldata3train"],
-                qldata3test=payload["qldata3test"],
-            )
 
     meta_path = run_dir / "meta.json"
     with meta_path.open("w", encoding="utf-8") as f:
@@ -300,10 +274,14 @@ def main() -> None:
         handlers=[file_handler, stream_handler],
     )
 
+    run_dir = args.out_dir / f"mdp_core_{run_tag}"
+    allpols_dir = run_dir / "allpols"
+
     outputs = run_core(
         mimic_csv=args.mimic_csv,
         nr_reps=args.nr_reps,
         seed=args.seed,
+        allpols_dir=allpols_dir,
     )
 
     meta = {

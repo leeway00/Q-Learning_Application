@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Iterable, Tuple
+import logging
 from typing import Iterable, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import KMeans, kmeans_plusplus
+from sklearn.cluster import k_means
 from sklearn.metrics import pairwise_distances_argmin
+from psutil import virtual_memory
+
+LOGGER = logging.getLogger("ai_utils")
 
 
 def _init_cuml():
@@ -28,6 +31,30 @@ def _init_cuml():
     return True, cp, cuKMeans
 
 _CUM_L_AVAILABLE, _CP, _CUKMEANS = _init_cuml()
+
+
+def manage_memory_pressure(
+    threshold_percent: float = 85.0,
+    gpu_threshold_percent: float = 90.0,
+) -> None:
+    """
+    Flush memory pools when system RAM or GPU VRAM usage crosses thresholds.
+    Safe no-op if dependencies are unavailable.
+    """
+    # System RAM check (optional dependency).
+    mem = virtual_memory()
+    if mem.percent >= threshold_percent and _CUM_L_AVAILABLE:
+        _CP.get_default_pinned_memory_pool().free_all_blocks()
+        LOGGER.info("Freed pinned pool due to RAM pressure: %.2f%%", mem.percent)
+
+    # GPU VRAM check.
+    if _CUM_L_AVAILABLE:
+        free, total = _CP.cuda.runtime.memGetInfo()
+        used_pct = 100.0 * (1.0 - (free / total))
+        if used_pct >= gpu_threshold_percent:
+            _CP.get_default_memory_pool().free_all_blocks()
+            _CP.get_default_pinned_memory_pool().free_all_blocks()
+            LOGGER.info("Freed GPU pools due to VRAM pressure: %.2f%%", used_pct)
 
 def zscore_matlab(x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """MATLAB-like zscore with ddof=1. Returns (z, mean, std)."""
@@ -63,10 +90,13 @@ def kmeans_best(
     """
     best_centroids = None
     best_inertia = math.inf
+    x_gpu = None
+    if _CUM_L_AVAILABLE:
+        x_gpu = _CP.asarray(x, dtype=_CP.float32)
+
     for _ in range(n_reps):
+        seed = int(rng.integers(1, 2**31 - 1))
         if _CUM_L_AVAILABLE:
-            seed = int(rng.integers(1, 2**31 - 1))
-            x_gpu = _CP.asarray(x, dtype=_CP.float32)
             kmeans = _CUKMEANS(
                 n_clusters=n_clusters,
                 init="k-means++",
@@ -78,25 +108,24 @@ def kmeans_best(
             inertia = float(kmeans.inertia_)
             centroids = _CP.asnumpy(kmeans.cluster_centers_)
         else:
-            init_centers, _ = kmeans_plusplus(
+            centroids, _, inertia = k_means(
                 x,
                 n_clusters=n_clusters,
-                random_state=int(rng.integers(1, 2**31 - 1)),
-            )
-            kmeans = KMeans(
-                n_clusters=n_clusters,
-                init=init_centers,
+                init="k-means++",
                 n_init=1,
                 max_iter=max_iter,
-                random_state=int(rng.integers(1, 2**31 - 1)),
+                random_state=seed,
                 algorithm="lloyd",
             )
-            kmeans.fit(x)
-            inertia = float(kmeans.inertia_)
-            centroids = kmeans.cluster_centers_
+            inertia = float(inertia)
         if inertia < best_inertia:
             best_inertia = inertia
             best_centroids = centroids
+    if _CUM_L_AVAILABLE:
+        # Free cached GPU memory blocks after all repetitions.
+        _CP.get_default_memory_pool().free_all_blocks()
+        _CP.get_default_pinned_memory_pool().free_all_blocks()
+        manage_memory_pressure()
     return best_centroids
 
 
