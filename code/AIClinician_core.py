@@ -101,7 +101,7 @@ def run_core(
     collog_idx = [mimic_df.columns.get_loc(c) for c in COLLOG]
 
     # mimicraw is kept for MATLAB parity (used for eICU conversion factors in the original code).
-    # mimicraw = mimic_df.iloc[:, colbin_idx + colnorm_idx + collog_idx].values.copy()
+    # mimicraw = mimic_df.iloc[:, colbin_idx + colnorm_idx + collog_idx]
     mimiczs = np.concatenate(
         [
             reformat5[:, colbin_idx] - 0.5,
@@ -110,13 +110,13 @@ def run_core(
         ],
         axis=1,
     )
-    mimiczs[:, 3] = np.log(mimiczs[:, 3] + 0.6)
+    mimiczs[:, 2] = np.log(mimiczs[:, 2] + 0.6) # second column is MAX DOSES
     mimiczs[:, 44] = 2 * mimiczs[:, 44]
     LOGGER.info("Built MIMICraw/MIMICzs")
 
     # Conversion factors (kept for MATLAB parity; used for eICU z-scoring in original code)
-    # _, cmu, csigma = zscore_matlab(mimicraw[:, 4:36])
-    # _, dmu, dsigma = zscore_matlab(np.log(0.1 + mimicraw[:, 36:47]))
+    # _, cmu, csigma = zscore_matlab(mimicraw.iloc[:, 4:36].values)
+    # _, dmu, dsigma = zscore_matlab(np.log(0.1 + mimicraw.iloc[:, 36:47].values))
 
     idxs = np.full((icustayidlist.shape[0], nr_reps), np.nan)
 
