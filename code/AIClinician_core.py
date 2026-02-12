@@ -72,7 +72,6 @@ def run_core(
     mimic_csv: Path,
     nr_reps: int = 500,
     seed: Optional[int] = None,
-    do_plots: bool = False,
     allpols_dir: Optional[Path] = None,
 ) -> Dict[str, object]:
     """Main entry to replicate AIClinician_core_160219.m"""
